@@ -4,9 +4,10 @@ UNIFIED DUAL-CORE DFS HANDICAPPING ENGINE v9.0
 Complete end-to-end execution: Stage 1 → Stage 2A → Stage 2B → Portfolio Optimization
 """
 
+import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, date as _date
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 import logging
@@ -145,16 +146,51 @@ class Engine:
         }
 
 
-def main():
+def resolve_run_date(cli_date: Optional[str] = None) -> str:
+    """
+    Determine the slate date using the following precedence (highest first):
+
+    1. ``cli_date`` — value supplied via ``--date`` on the command line.
+    2. ``MODEL_DATE`` environment variable.
+    3. Today's date (UTC) formatted as ``YYYY-MM-DD``.
+
+    The resolved value must be a valid date string in ``YYYY-MM-DD`` format.
+    A ``ValueError`` is raised if the supplied string cannot be parsed.
+    """
+    raw = cli_date or os.environ.get("MODEL_DATE", "").strip() or None
+    if raw:
+        # Validate format — raises ValueError on bad input.
+        datetime.strptime(raw, "%Y-%m-%d")
+        return raw
+    return _date.today().strftime("%Y-%m-%d")
+
+
+def main(argv: Optional[List[str]] = None) -> Dict:
     """Execute full pipeline"""
+    parser = argparse.ArgumentParser(
+        description="Unified Dual-Core DFS Handicapping Engine v9.0"
+    )
+    parser.add_argument(
+        "--date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Slate date to run (YYYY-MM-DD). "
+            "Falls back to MODEL_DATE env var, then today's date."
+        ),
+    )
+    args = parser.parse_args(argv)
+
     api_key = os.getenv('PARLAY_API_KEY', '')
     if not api_key:
         raise RuntimeError("PARLAY_API_KEY is required for live Parlay API calls.")
     bankroll = float(os.getenv('ENGINE_BANKROLL', '1000.0'))
     sports = ['mlb', 'wnba']
-    date = '2026-08-19'
+    date = resolve_run_date(args.date)
     platforms = ['DRAFTKINGS_PICK6', 'PARLAYPLAY', 'CHALKBOARD']
     
+    logger.info(f"Slate date: {date}")
+
     # Initialize database
     try:
         from src.db.models import create_all_tables
