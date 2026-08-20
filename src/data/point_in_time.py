@@ -43,15 +43,15 @@ class PointInTimeCapture:
         return value
 
     # Default base URL for the Parlay API service.
-    # Can be overridden via B365_API_BASE_URL when needed (e.g. staging).
-    _B365_API_BASE_URL = "https://parlay-api.com"
+    # Can be overridden via B365_API_BASE_URL for backward compatibility.
+    _PARLAY_API_BASE_URL = "https://parlay-api.com"
 
     def _fetch_parlay_odds(self, sports: List[str], date: str) -> Dict[str, Any]:
         """
-        Fetch live odds from the b365api service.
+        Fetch live odds from the Parlay API service.
 
         Required env vars:
-          - PARLAY_API2  — API credential/token issued by b365api.com
+          - PARLAY_API2  — API credential/token issued by Parlay API
 
         Optional env vars:
           - B365_API_BASE_URL  — override the default base URL
@@ -77,7 +77,7 @@ class PointInTimeCapture:
 
         api_base = (
             os.environ.get("B365_API_BASE_URL", "").strip()
-            or self._B365_API_BASE_URL
+            or self._PARLAY_API_BASE_URL
         )
         odds_path = (
             os.environ.get("SPORTSBOOKODDS", "").strip()
