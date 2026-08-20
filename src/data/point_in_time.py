@@ -152,35 +152,45 @@ class PointInTimeCapture:
 
         return self._normalize_parlay_payload(payload)
 
+    def _fetch_sport_slate(
+        self,
+        sport: str,
+        date: str,
+    ) -> tuple:
+        """
+        Fetch odds + props from ParlayAPIClient for *sport*.
+
+        Returns (odds_records, props_records).
+
+        Raises RuntimeError if PARLAYAPI_API_KEY / PARLAY_API_BASE_URL are
+        absent — the caller must not silently fall back to mock data.
+        """
+        from src.data.parlayapi_client import ParlayAPIClient
+        client = ParlayAPIClient()
+        odds = client.fetch_odds(sport)
+        props = client.fetch_props(sport)
+        return odds, props
+
     def capture_slate_state(self, sports: List[str], date: str, api_key: str) -> PointInTimeState:
         """Main PIT capture"""
         ts = datetime.now().isoformat()
-        
-        # Mock MLB games for 2026-08-19
-        mlb_games = [
-            {"id": "mlb_1", "away": "DET", "home": "PIT", "time": "12:35 PM", "pitcher_away": "Jobe", "pitcher_home": "Skenes"},
-            {"id": "mlb_2", "away": "SD", "home": "NYM", "time": "1:10 PM", "pitcher_away": "King", "pitcher_home": "Stock"},
-            {"id": "mlb_3", "away": "ATL", "home": "MIN", "time": "1:40 PM", "pitcher_away": "Smith-Shawver", "pitcher_home": "Bradley"},
-            {"id": "mlb_4", "away": "CWS", "home": "CHC", "time": "2:20 PM", "pitcher_away": "Newcomb", "pitcher_home": "Holmes"},
-            {"id": "mlb_5", "away": "ARI", "home": "BOS", "time": "4:10 PM", "pitcher_away": "Pfaadt", "pitcher_home": "Tolle"},
-            {"id": "mlb_6", "away": "MIA", "home": "PHI", "time": "6:05 PM", "pitcher_away": "Alcantara", "pitcher_home": "Nola"},
-            {"id": "mlb_7", "away": "NYY", "home": "BAL", "time": "6:35 PM", "pitcher_away": "Warren", "pitcher_home": "Bassitt"},
-            {"id": "mlb_8", "away": "SF", "home": "CLE", "time": "6:40 PM", "pitcher_away": "Wilkinson", "pitcher_home": "Messick"},
-            {"id": "mlb_9", "away": "STL", "home": "CIN", "time": "6:40 PM", "pitcher_away": "Liberatore", "pitcher_home": "Burns"},
-            {"id": "mlb_10", "away": "TOR", "home": "TB", "time": "6:40 PM", "pitcher_away": "Scherzer", "pitcher_home": "Rasmussen"},
-            {"id": "mlb_11", "away": "OAK", "home": "KC", "time": "7:40 PM", "pitcher_away": "Unknown", "pitcher_home": "Unknown"},
-            {"id": "mlb_12", "away": "SEA", "home": "MIL", "time": "7:40 PM", "pitcher_away": "Gilbert", "pitcher_home": "May"},
-            {"id": "mlb_13", "away": "WSH", "home": "TEX", "time": "8:05 PM", "pitcher_away": "Cavalli", "pitcher_home": "Rocker"},
-            {"id": "mlb_14", "away": "LAA", "home": "HOU", "time": "8:10 PM", "pitcher_away": "Ureña", "pitcher_home": "Pecko"},
-            {"id": "mlb_15", "away": "LAD", "home": "COL", "time": "8:40 PM", "pitcher_away": "Sasaki", "pitcher_home": "Freeland"},
-        ]
-        
-        # Mock WNBA games
-        wnba_games = [
-            {"id": "wnba_1", "away": "TOR", "home": "WAS", "time": "4:30 PM"},
-            {"id": "wnba_2", "away": "MIN", "home": "GSV", "time": "7:00 PM"},
-        ]
-        
+
+        from src.data.slate_normalizer import normalize_mlb_slate, normalize_wnba_slate
+
+        # MLB slate — sourced from ParlayAPIClient (parlay-api.com).
+        # Raises RuntimeError if credentials are absent or no games are found
+        # for the requested date; no silent fallback to hardcoded data.
+        mlb_games: List[Dict] = []
+        if "mlb" in sports:
+            mlb_odds, mlb_props = self._fetch_sport_slate("mlb", date)
+            mlb_games = normalize_mlb_slate(mlb_odds, mlb_props, date)
+
+        # WNBA slate — same approach.
+        wnba_games: List[Dict] = []
+        if "wnba" in sports:
+            wnba_odds, wnba_props = self._fetch_sport_slate("wnba", date)
+            wnba_games = normalize_wnba_slate(wnba_odds, wnba_props, date)
+
         # Live b365api odds (no silent fallback to mocks)
         _ = api_key  # maintained for signature compatibility; auth is env-driven
         parlay_odds = self._fetch_parlay_odds(sports, date)

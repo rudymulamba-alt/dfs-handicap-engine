@@ -550,7 +550,40 @@ class TestFetchAll:
 # Integration with PointInTimeState
 # ---------------------------------------------------------------------------
 
+# Minimal fake slate data used by TestPointInTimeIntegration.
+# The test date used throughout this class is "2026-08-20".
+_PIT_MLB_ODDS = [
+    {
+        "event_id": "pit_event_mlb_001",
+        "commence_time": "2026-08-20T17:00:00Z",
+        "home_team": "Team A",
+        "away_team": "Team B",
+        "bookmaker": "fanduel",
+        "bookmaker_title": "FanDuel",
+        "market": "h2h",
+        "outcomes": [],
+        "market_source": "odds",
+        "fetched_at": "2026-08-20T14:00:00Z",
+    }
+]
+
+
+def _pit_slate_side_effect(sport, date):
+    """Return minimal (odds, props) tuples for any sport at 2026-08-20."""
+    return _PIT_MLB_ODDS, []
+
+
 class TestPointInTimeIntegration:
+    @pytest.fixture(autouse=True)
+    def mock_slate_fetch(self):
+        """Patch _fetch_sport_slate for all tests in this class so that
+        the slate ingestion path does not require real credentials."""
+        with patch(
+            "src.data.point_in_time.PointInTimeCapture._fetch_sport_slate",
+            side_effect=_pit_slate_side_effect,
+        ):
+            yield
+
     def test_parlayapi_odds_field_exists_on_state(self):
         """PointInTimeState dataclass must have a parlayapi_odds field."""
         from src.data.point_in_time import PointInTimeState
