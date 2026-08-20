@@ -24,7 +24,7 @@ A two-stage sports forecasting and DFS product validation engine built to the v9
 
 ```bash
 pip install -r requirements.txt
-export PARLAY_API_KEY=14559e0db9853f9d4ac8211f25d042b0
+export PARLAY_API2=your_parlay_api_token_here
 python main.py
 ```
 

@@ -190,7 +190,7 @@ def main(argv: Optional[List[str]] = None) -> Dict:
     if not api_key:
         raise RuntimeError(
             "PARLAY_API2 is required. "
-            "Set your b365api token as PARLAY_API2."
+            "Set your Parlay API token as PARLAY_API2."
         )
     bankroll = float(os.getenv('ENGINE_BANKROLL', '1000.0'))
     sports = ['mlb', 'wnba']
