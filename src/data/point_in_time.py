@@ -3,9 +3,9 @@
 import hashlib
 import json
 import os
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any
-from dataclasses import dataclass
 import requests
 
 
@@ -23,6 +23,10 @@ class PointInTimeState:
     injuries: Dict[str, Any]
     weather: Dict[str, Any]
     information_state_hash: str
+    # ParlayAPI data (parlay-api.com) — separate from the b365api parlay_odds above.
+    # Stored as a dict keyed by sport token, each value being a dict with
+    # "odds" and "props" lists as returned by ParlayAPIClient.fetch_all().
+    parlayapi_odds: Dict[str, Any] = field(default_factory=dict)
 
 
 class PointInTimeCapture:
@@ -110,9 +114,20 @@ class PointInTimeCapture:
             {"id": "wnba_2", "away": "MIN", "home": "GSV", "time": "7:00 PM"},
         ]
         
-        # Live Parlay API odds (no silent fallback to mocks)
+        # Live b365api odds (no silent fallback to mocks)
         _ = api_key  # maintained for signature compatibility; auth is env-driven
         parlay_odds = self._fetch_parlay_odds(sports, date)
+
+        # ParlayAPI (parlay-api.com) — separate data source, fetched only when
+        # the required credentials are configured.  A missing key is non-fatal
+        # here so that the b365api path continues to work independently; a
+        # RuntimeError from ParlayAPIClient propagates naturally when the vars
+        # are present but the request fails.
+        parlayapi_odds: Dict[str, Any] = {}
+        if os.environ.get("PARLAYAPI_API_KEY", "").strip() and \
+                os.environ.get("PARLAY_API_BASE_URL", "").strip():
+            from src.data.parlayapi_client import ParlayAPIClient
+            parlayapi_odds = ParlayAPIClient().fetch_all(sports)
         
         # Mock DFS products
         dfs_products = {
@@ -127,8 +142,17 @@ class PointInTimeCapture:
             },
         }
         
-        # Create information state hash
-        state_str = json.dumps([mlb_games, wnba_games, parlay_odds], default=str, sort_keys=True)
+        # Information state hash.
+        # parlayapi_odds is included because it is live external market data
+        # that affects the informational state of the system at capture time,
+        # consistent with how parlay_odds (b365api) is already included.  Any
+        # change in the ParlayAPI market data will therefore produce a different
+        # hash, enabling downstream consumers to detect staleness.
+        state_str = json.dumps(
+            [mlb_games, wnba_games, parlay_odds, parlayapi_odds],
+            default=str,
+            sort_keys=True,
+        )
         info_hash = hashlib.sha256(state_str.encode()).hexdigest()
         
         return PointInTimeState(
@@ -142,5 +166,6 @@ class PointInTimeCapture:
             lineups={},
             injuries={},
             weather={},
-            information_state_hash=info_hash
+            information_state_hash=info_hash,
+            parlayapi_odds=parlayapi_odds,
         )

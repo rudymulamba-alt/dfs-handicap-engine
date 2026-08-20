@@ -30,6 +30,8 @@ jobs:
           PARLAY_API_KEY: ${{ secrets.PARLAY_API_KEY }}
           PARLAY_API2: ${{ secrets.PARLAY_API2 }}
           SPORTSBOOKODDS: ${{ secrets.SPORTSBOOKODDS }}
+          PARLAYAPI_API_KEY: ${{ secrets.PARLAYAPI_API_KEY }}
+          PARLAY_API_BASE_URL: ${{ secrets.PARLAY_API_BASE_URL }}
           DATABASE_URL: "sqlite:///test_engine.db"
         run: |
           pytest tests/ -v --cov=src --cov-report=term-missing
@@ -39,6 +41,8 @@ jobs:
           PARLAY_API_KEY: ${{ secrets.PARLAY_API_KEY }}
           PARLAY_API2: ${{ secrets.PARLAY_API2 }}
           SPORTSBOOKODDS: ${{ secrets.SPORTSBOOKODDS }}
+          PARLAYAPI_API_KEY: ${{ secrets.PARLAYAPI_API_KEY }}
+          PARLAY_API_BASE_URL: ${{ secrets.PARLAY_API_BASE_URL }}
           DATABASE_URL: "sqlite:///test_engine.db"
         run: |
           python main.py
