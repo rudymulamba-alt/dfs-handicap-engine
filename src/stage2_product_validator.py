@@ -18,10 +18,25 @@ class Stage2BProductValidator:
         """Validate exact DFS product economics"""
         
         # Lookup app line
-        app_lines = self.pit_state.dfs_products.get(platform.lower().replace("_", ""), {})
-        market_key = f"{fused_forecast['event_id']}_{fused_forecast['market']}_{fused_forecast['threshold']}"
-        
-        product_info = app_lines.get(market_key)
+        # Normalise platform key: "DRAFTKINGS_PICK6" → "draftkingspick6"
+        platform_key = platform.lower().replace("_", "")
+        app_lines = self.pit_state.dfs_products.get(platform_key, {})
+
+        # Try exact market key, then fallback variants
+        threshold = fused_forecast.get("threshold", 0.0)
+        market = fused_forecast.get("market", "")
+        event_id = fused_forecast.get("event_id", "")
+
+        candidate_keys = [
+            f"{event_id}_{market}_{threshold}",
+            f"{event_id}_{market}_{int(threshold)}",
+            f"{event_id}_{market}_{threshold:.1f}",
+        ]
+        product_info = None
+        for key in candidate_keys:
+            product_info = app_lines.get(key)
+            if product_info:
+                break
         
         if not product_info:
             return {

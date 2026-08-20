@@ -147,22 +147,39 @@ class Engine:
 
 def main():
     """Execute full pipeline"""
-    api_key = os.getenv('PARLAY_API_KEY', '14559e0db9853f9d4ac8211f25d042b0')
-    bankroll = 1000.0
+    api_key = os.getenv('PARLAY_API_KEY', '')
+    if not api_key:
+        logger.warning("PARLAY_API_KEY not set; using mock data only. Set via environment variable.")
+    bankroll = float(os.getenv('ENGINE_BANKROLL', '1000.0'))
     sports = ['mlb', 'wnba']
     date = '2026-08-19'
     platforms = ['DRAFTKINGS_PICK6', 'PARLAYPLAY', 'CHALKBOARD']
     
+    # Initialize database
+    try:
+        from src.db.models import create_all_tables
+        create_all_tables()
+        logger.info("✓ Database tables initialized")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Database initialization skipped: %s", exc)
+
     engine = Engine(api_key=api_key, bankroll=bankroll)
     result = engine.run_slate(sports=sports, date=date, platforms=platforms)
     
-    # Output
-    print("\n" + "="*80)
-    print("FINAL RECOMMENDATION")
-    print("="*80)
-    print(json.dumps(result, indent=2, default=str))
+    # Audit ledger
+    try:
+        from src.audit.ledger import save_ledger, format_final_output
+        print(format_final_output(result))
+        save_ledger(f"output/audit_ledger_{engine.run_id}.json")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Audit ledger write skipped: %s", exc)
+        # Fallback output
+        print("\n" + "="*80)
+        print("FINAL RECOMMENDATION")
+        print("="*80)
+        print(json.dumps(result, indent=2, default=str))
     
-    # Save
+    # Save JSON
     os.makedirs('output', exist_ok=True)
     output_file = f"output/final_recommendation_{engine.run_id}.json"
     with open(output_file, 'w') as f:
