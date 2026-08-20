@@ -42,18 +42,47 @@ class PointInTimeCapture:
             )
         return value
 
+    # Default base URL for the b365api service.  Can be overridden via the
+    # B365_API_BASE_URL environment variable when needed (e.g. staging).
+    _B365_API_BASE_URL = "https://api.b365api.com/v1"
+
     def _fetch_parlay_odds(self, sports: List[str], date: str) -> Dict[str, Any]:
         """
-        Fetch live odds from the configured Parlay API endpoint.
+        Fetch live odds from the b365api service.
 
         Required env vars:
-          - PARLAY_API_KEY
-          - PARLAY_API2
-          - SPORTSBOOKODDS
+          - PARLAY_API2  — API credential/token issued by b365api.com
+
+        Optional env vars:
+          - B365_API_BASE_URL  — override the default base URL
+                                 (default: https://api.b365api.com/v1)
+          - SPORTSBOOKODDS     — override the odds endpoint path
+                                 (default: bet365/odds)
+
+        Legacy env vars (kept for backward compatibility, ignored when
+        PARLAY_API2 is set):
+          - PARLAY_API_KEY     — previously used as the b365api credential
         """
-        api_key = self._require_env("PARLAY_API_KEY")
-        api_base = self._require_env("PARLAY_API2")
-        odds_path = self._require_env("SPORTSBOOKODDS")
+        # PARLAY_API2 is the sole required credential.  Fall back to the legacy
+        # PARLAY_API_KEY name so that any existing CI setup continues to work.
+        api_key = (
+            os.environ.get("PARLAY_API2", "").strip()
+            or os.environ.get("PARLAY_API_KEY", "").strip()
+        )
+        if not api_key:
+            raise RuntimeError(
+                "Missing required environment variable: PARLAY_API2. "
+                "Set your b365api token as PARLAY_API2."
+            )
+
+        api_base = (
+            os.environ.get("B365_API_BASE_URL", "").strip()
+            or self._B365_API_BASE_URL
+        )
+        odds_path = (
+            os.environ.get("SPORTSBOOKODDS", "").strip()
+            or "bet365/odds"
+        )
 
         endpoint = f"{api_base.rstrip('/')}/{odds_path.lstrip('/')}"
         headers = {"Authorization": "Bearer " + api_key}
