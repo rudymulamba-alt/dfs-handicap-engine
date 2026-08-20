@@ -4,9 +4,10 @@ UNIFIED DUAL-CORE DFS HANDICAPPING ENGINE v9.0
 Complete end-to-end execution: Stage 1 → Stage 2A → Stage 2B → Portfolio Optimization
 """
 
+import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, date as _date
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 import logging
@@ -145,24 +146,84 @@ class Engine:
         }
 
 
-def main():
+def resolve_run_date(cli_date: Optional[str] = None) -> str:
+    """
+    Determine the slate date using the following precedence (highest first):
+
+    1. ``cli_date`` — value supplied via ``--date`` on the command line.
+    2. ``MODEL_DATE`` environment variable.
+    3. Today's date (UTC) formatted as ``YYYY-MM-DD``.
+
+    The resolved value must be a valid date string in ``YYYY-MM-DD`` format.
+    A ``ValueError`` is raised if the supplied string cannot be parsed.
+    """
+    raw = cli_date or os.environ.get("MODEL_DATE", "").strip() or None
+    if raw:
+        # Validate format — raises ValueError on bad input.
+        datetime.strptime(raw, "%Y-%m-%d")
+        return raw
+    return _date.today().strftime("%Y-%m-%d")
+
+
+def main(argv: Optional[List[str]] = None) -> Dict:
     """Execute full pipeline"""
-    api_key = os.getenv('PARLAY_API_KEY', '14559e0db9853f9d4ac8211f25d042b0')
-    bankroll = 1000.0
+    parser = argparse.ArgumentParser(
+        description="Unified Dual-Core DFS Handicapping Engine v9.0"
+    )
+    parser.add_argument(
+        "--date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Slate date to run (YYYY-MM-DD). "
+            "Falls back to MODEL_DATE env var, then today's date."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    # PARLAY_API2 is the sole required credential.  The legacy PARLAY_API_KEY
+    # name is accepted as a fallback so that existing CI setups are not broken.
+    api_key = (
+        os.getenv('PARLAY_API2', '').strip()
+        or os.getenv('PARLAY_API_KEY', '').strip()
+    )
+    if not api_key:
+        raise RuntimeError(
+            "PARLAY_API2 is required. "
+            "Set your Parlay API token as PARLAY_API2."
+        )
+    bankroll = float(os.getenv('ENGINE_BANKROLL', '1000.0'))
     sports = ['mlb', 'wnba']
-    date = '2026-08-19'
+    date = resolve_run_date(args.date)
     platforms = ['DRAFTKINGS_PICK6', 'PARLAYPLAY', 'CHALKBOARD']
     
+    logger.info(f"Slate date: {date}")
+
+    # Initialize database
+    try:
+        from src.db.models import create_all_tables
+        create_all_tables()
+        logger.info("✓ Database tables initialized")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Database initialization skipped: %s", exc)
+
     engine = Engine(api_key=api_key, bankroll=bankroll)
     result = engine.run_slate(sports=sports, date=date, platforms=platforms)
     
-    # Output
-    print("\n" + "="*80)
-    print("FINAL RECOMMENDATION")
-    print("="*80)
-    print(json.dumps(result, indent=2, default=str))
+    # Audit ledger
+    try:
+        from src.audit.ledger import save_ledger, format_final_output
+        print(format_final_output(result))
+        save_ledger(f"output/audit_ledger_{engine.run_id}.json")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Audit ledger write skipped: %s", exc)
+        # Fallback output
+        print("\n" + "="*80)
+        print("FINAL RECOMMENDATION")
+        print("="*80)
+        print(json.dumps(result, indent=2, default=str))
     
-    # Save
+    # Save JSON
     os.makedirs('output', exist_ok=True)
     output_file = f"output/final_recommendation_{engine.run_id}.json"
     with open(output_file, 'w') as f:
