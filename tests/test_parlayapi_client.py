@@ -646,6 +646,92 @@ class TestPointInTimeIntegration:
 
         assert state.parlay_odds == expected_odds
 
+    def test_snapshot_mode_loads_valid_local_json(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PARLAY_ODDS_SNAPSHOT_MODE", "true")
+        snapshot_payload = {"mlb_moneyline": {"home": -120, "away": 105}}
+        snapshot_path = tmp_path / "parlay_odds_snapshot.json"
+        snapshot_path.write_text(
+            '{"mlb_moneyline": {"home": -120, "away": 105}}',
+            encoding="utf-8",
+        )
+
+        from src.data.point_in_time import PointInTimeCapture
+        monkeypatch.setattr(
+            PointInTimeCapture,
+            "_PARLAY_ODDS_SNAPSHOT_PATH",
+            snapshot_path,
+        )
+
+        with patch("src.data.point_in_time.requests.get") as mock_get:
+            state = PointInTimeCapture().capture_slate_state(
+                ["mlb"], "2026-08-20", "unused-key"
+            )
+
+        assert state.parlay_odds == snapshot_payload
+        mock_get.assert_not_called()
+
+    def test_snapshot_mode_missing_snapshot_raises(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PARLAY_ODDS_SNAPSHOT_MODE", "true")
+
+        from src.data.point_in_time import PointInTimeCapture
+        monkeypatch.setattr(
+            PointInTimeCapture,
+            "_PARLAY_ODDS_SNAPSHOT_PATH",
+            tmp_path / "missing_snapshot.json",
+        )
+
+        with pytest.raises(RuntimeError, match="snapshot not found"):
+            PointInTimeCapture().capture_slate_state(
+                ["mlb"], "2026-08-20", "unused-key"
+            )
+
+    def test_snapshot_mode_malformed_json_raises(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PARLAY_ODDS_SNAPSHOT_MODE", "true")
+        snapshot_path = tmp_path / "parlay_odds_snapshot.json"
+        snapshot_path.write_text("{not-json", encoding="utf-8")
+
+        from src.data.point_in_time import PointInTimeCapture
+        monkeypatch.setattr(
+            PointInTimeCapture,
+            "_PARLAY_ODDS_SNAPSHOT_PATH",
+            snapshot_path,
+        )
+
+        with pytest.raises(RuntimeError, match="malformed JSON"):
+            PointInTimeCapture().capture_slate_state(
+                ["mlb"], "2026-08-20", "unused-key"
+            )
+
+    def test_live_mode_ignores_snapshot_and_still_calls_http(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("PARLAY_ODDS_SNAPSHOT_MODE", raising=False)
+        monkeypatch.delenv("PARLAYAPI_API_KEY", raising=False)
+        monkeypatch.setenv("PARLAY_API_KEY", "b365-key")
+        monkeypatch.setenv("PARLAY_API2", "https://b365.example.test")
+        monkeypatch.setenv("SPORTSBOOKODDS", "sportsbook/odds")
+        snapshot_path = tmp_path / "parlay_odds_snapshot.json"
+        snapshot_path.write_text('{"from_snapshot": true}', encoding="utf-8")
+
+        expected_odds = {"from_live_api": True}
+        b365_response = MagicMock()
+        b365_response.raise_for_status.return_value = None
+        b365_response.json.return_value = expected_odds
+
+        from src.data.point_in_time import PointInTimeCapture
+        monkeypatch.setattr(
+            PointInTimeCapture,
+            "_PARLAY_ODDS_SNAPSHOT_PATH",
+            snapshot_path,
+        )
+
+        with patch("src.data.point_in_time.requests.get",
+                   return_value=b365_response) as mock_get:
+            state = PointInTimeCapture().capture_slate_state(
+                ["mlb"], "2026-08-20", "b365-key"
+            )
+
+        assert state.parlay_odds == expected_odds
+        mock_get.assert_called_once()
+
     def test_parlayapi_odds_included_in_state_hash(self, monkeypatch):
         """
         Changing parlayapi_odds must change information_state_hash.

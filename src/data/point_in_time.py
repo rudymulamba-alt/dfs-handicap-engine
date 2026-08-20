@@ -5,6 +5,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Any
 import requests
 
@@ -32,6 +33,10 @@ class PointInTimeState:
 class PointInTimeCapture:
     """Captures all external state atomically"""
 
+    _PARLAY_ODDS_SNAPSHOT_PATH = (
+        Path(__file__).resolve().parents[2] / "data" / "parlay_odds_snapshot.json"
+    )
+
     @staticmethod
     def _require_env(name: str) -> str:
         value = os.environ.get(name, "").strip()
@@ -45,6 +50,45 @@ class PointInTimeCapture:
     # Default base URL for the Parlay API service.
     # Can be overridden via B365_API_BASE_URL for backward compatibility.
     _PARLAY_API_BASE_URL = "https://parlay-api.com"
+
+    @staticmethod
+    def _normalize_parlay_payload(payload: Any) -> Dict[str, Any]:
+        if payload is None:
+            raise RuntimeError("Parlay API returned an empty payload.")
+
+        # Normalize to dict so downstream hashing and consumers are deterministic.
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list):
+            return {f"item_{idx}": item for idx, item in enumerate(payload)}
+
+        raise RuntimeError("Parlay API payload has unsupported format.")
+
+    @staticmethod
+    def _snapshot_mode_enabled() -> bool:
+        value = os.environ.get("PARLAY_ODDS_SNAPSHOT_MODE", "").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+
+    def _load_local_parlay_odds_snapshot(self) -> Dict[str, Any]:
+        snapshot_path = self._PARLAY_ODDS_SNAPSHOT_PATH
+        if not snapshot_path.exists():
+            raise RuntimeError(
+                f"Local parlay odds snapshot not found: {snapshot_path}"
+            )
+
+        try:
+            with snapshot_path.open("r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Local parlay odds snapshot is malformed JSON: {snapshot_path}"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeError(
+                f"Local parlay odds snapshot could not be read: {snapshot_path}"
+            ) from exc
+
+        return self._normalize_parlay_payload(payload)
 
     def _fetch_parlay_odds(self, sports: List[str], date: str) -> Dict[str, Any]:
         """
@@ -63,6 +107,9 @@ class PointInTimeCapture:
         PARLAY_API2 is set):
           - PARLAY_API_KEY     — previously used as the b365api credential
         """
+        if self._snapshot_mode_enabled():
+            return self._load_local_parlay_odds_snapshot()
+
         # PARLAY_API2 is the sole required credential.  Fall back to the legacy
         # PARLAY_API_KEY name so that any existing CI setup continues to work.
         api_key = (
@@ -103,16 +150,7 @@ class PointInTimeCapture:
         except ValueError as exc:
             raise RuntimeError("Parlay API returned non-JSON response.") from exc
 
-        if payload is None:
-            raise RuntimeError("Parlay API returned an empty payload.")
-
-        # Normalize to dict so downstream hashing and consumers are deterministic.
-        if isinstance(payload, dict):
-            return payload
-        if isinstance(payload, list):
-            return {f"item_{idx}": item for idx, item in enumerate(payload)}
-
-        raise RuntimeError("Parlay API payload has unsupported format.")
+        return self._normalize_parlay_payload(payload)
 
     def capture_slate_state(self, sports: List[str], date: str, api_key: str) -> PointInTimeState:
         """Main PIT capture"""
