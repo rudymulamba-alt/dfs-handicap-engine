@@ -648,6 +648,11 @@ class TestPointInTimeIntegration:
 
     def test_snapshot_mode_loads_valid_local_json(self, monkeypatch, tmp_path):
         monkeypatch.setenv("PARLAY_ODDS_SNAPSHOT_MODE", "true")
+        monkeypatch.delenv("PARLAYAPI_API_KEY", raising=False)
+        monkeypatch.delenv("PARLAY_API_BASE_URL", raising=False)
+        monkeypatch.setenv("PARLAY_API_KEY", "b365-key")
+        monkeypatch.setenv("PARLAY_API2", "https://b365.example.test")
+        monkeypatch.setenv("SPORTSBOOKODDS", "sportsbook/odds")
         snapshot_payload = {"mlb_moneyline": {"home": -120, "away": 105}}
         snapshot_path = tmp_path / "parlay_odds_snapshot.json"
         snapshot_path.write_text(
