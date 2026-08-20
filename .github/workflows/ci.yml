@@ -27,14 +27,18 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          PARLAY_API_KEY: "test_key"
+          PARLAY_API_KEY: ${{ secrets.PARLAY_API_KEY }}
+          PARLAY_API2: ${{ secrets.PARLAY_API2 }}
+          SPORTSBOOKODDS: ${{ secrets.SPORTSBOOKODDS }}
           DATABASE_URL: "sqlite:///test_engine.db"
         run: |
           pytest tests/ -v --cov=src --cov-report=term-missing
 
       - name: Verify main pipeline runs
         env:
-          PARLAY_API_KEY: "test_key"
+          PARLAY_API_KEY: ${{ secrets.PARLAY_API_KEY }}
+          PARLAY_API2: ${{ secrets.PARLAY_API2 }}
+          SPORTSBOOKODDS: ${{ secrets.SPORTSBOOKODDS }}
           DATABASE_URL: "sqlite:///test_engine.db"
         run: |
           python main.py

@@ -149,7 +149,7 @@ def main():
     """Execute full pipeline"""
     api_key = os.getenv('PARLAY_API_KEY', '')
     if not api_key:
-        logger.warning("PARLAY_API_KEY not set; using mock data only. Set via environment variable.")
+        raise RuntimeError("PARLAY_API_KEY is required for live Parlay API calls.")
     bankroll = float(os.getenv('ENGINE_BANKROLL', '1000.0'))
     sports = ['mlb', 'wnba']
     date = '2026-08-19'

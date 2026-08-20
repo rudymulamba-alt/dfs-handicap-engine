@@ -2,9 +2,11 @@
 
 import hashlib
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Any
 from dataclasses import dataclass
+import requests
 
 
 @dataclass
@@ -25,7 +27,60 @@ class PointInTimeState:
 
 class PointInTimeCapture:
     """Captures all external state atomically"""
-    
+
+    @staticmethod
+    def _require_env(name: str) -> str:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            raise RuntimeError(
+                f"Missing required environment variable: {name}. "
+                f"Configure it as a runtime env var or repository secret."
+            )
+        return value
+
+    def _fetch_parlay_odds(self, sports: List[str], date: str) -> Dict[str, Any]:
+        """
+        Fetch live odds from the configured Parlay API endpoint.
+
+        Required env vars:
+          - PARLAY_API_KEY
+          - PARLAY_API2
+          - SPORTSBOOKODDS
+        """
+        api_key = self._require_env("PARLAY_API_KEY")
+        api_base = self._require_env("PARLAY_API2")
+        odds_path = self._require_env("SPORTSBOOKODDS")
+
+        endpoint = f"{api_base.rstrip('/')}/{odds_path.lstrip('/')}"
+        headers = {"Authorization": "Bearer " + api_key}
+        params = {
+            "token": api_key,
+            "sport": ",".join(sports),
+            "date": date,
+        }
+
+        try:
+            response = requests.get(endpoint, headers=headers, params=params, timeout=20)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Parlay API request failed: {exc}") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Parlay API returned non-JSON response.") from exc
+
+        if payload is None:
+            raise RuntimeError("Parlay API returned an empty payload.")
+
+        # Normalize to dict so downstream hashing and consumers are deterministic.
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list):
+            return {f"item_{idx}": item for idx, item in enumerate(payload)}
+
+        raise RuntimeError("Parlay API payload has unsupported format.")
+
     def capture_slate_state(self, sports: List[str], date: str, api_key: str) -> PointInTimeState:
         """Main PIT capture"""
         ts = datetime.now().isoformat()
@@ -55,11 +110,9 @@ class PointInTimeCapture:
             {"id": "wnba_2", "away": "MIN", "home": "GSV", "time": "7:00 PM"},
         ]
         
-        # Mock Parlay API odds
-        parlay_odds = {
-            "mlb_1_pitcher_strikeouts_jobe_over_6.5": {"price": -115, "implied_prob": 0.535},
-            "wnba_1_player_points_over_18.5": {"price": -110, "implied_prob": 0.524},
-        }
+        # Live Parlay API odds (no silent fallback to mocks)
+        _ = api_key  # maintained for signature compatibility; auth is env-driven
+        parlay_odds = self._fetch_parlay_odds(sports, date)
         
         # Mock DFS products
         dfs_products = {

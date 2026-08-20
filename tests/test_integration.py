@@ -1,12 +1,24 @@
 """Integration test: full pipeline runs end-to-end."""
 
 import os
-import pytest
+from unittest.mock import Mock, patch
+
+
+def _mock_parlay_response():
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "mlb_1_pitcher_strikeouts_jobe_over_6.5": {"price": -115, "implied_prob": 0.535},
+        "wnba_1_player_points_over_18.5": {"price": -110, "implied_prob": 0.524},
+    }
+    return response
 
 
 def test_full_pipeline_runs():
     """Run the full engine pipeline and verify output structure."""
     os.environ.setdefault("PARLAY_API_KEY", "test_key")
+    os.environ.setdefault("PARLAY_API2", "https://example.test")
+    os.environ.setdefault("SPORTSBOOKODDS", "sportsbook/odds")
     os.environ.setdefault("DATABASE_URL", "sqlite:///test_integration.db")
 
     from src.stage1_core_a import Stage1CoreA, reconcile_forecasts
@@ -16,9 +28,10 @@ def test_full_pipeline_runs():
     from src.data.point_in_time import PointInTimeCapture
     from dataclasses import asdict
 
-    pit_state = PointInTimeCapture().capture_slate_state(
-        ["mlb", "wnba"], "2026-08-19", "test_key"
-    )
+    with patch("src.data.point_in_time.requests.get", return_value=_mock_parlay_response()):
+        pit_state = PointInTimeCapture().capture_slate_state(
+            ["mlb", "wnba"], "2026-08-19", "test_key"
+        )
 
     stage1 = Stage1CoreA(pit_state).scan_and_shortlist(["mlb", "wnba"], "DEEP")
     assert len(stage1["all_markets"]) > 0
@@ -61,10 +74,15 @@ def test_full_pipeline_runs():
 
 def test_platform_product_key_matching():
     """Platform key normalisation should correctly find products."""
+    os.environ.setdefault("PARLAY_API_KEY", "test_key")
+    os.environ.setdefault("PARLAY_API2", "https://example.test")
+    os.environ.setdefault("SPORTSBOOKODDS", "sportsbook/odds")
+
     from src.data.point_in_time import PointInTimeCapture
     from src.stage2_product_validator import Stage2BProductValidator
 
-    pit_state = PointInTimeCapture().capture_slate_state(["mlb"], "2026-08-19", "test_key")
+    with patch("src.data.point_in_time.requests.get", return_value=_mock_parlay_response()):
+        pit_state = PointInTimeCapture().capture_slate_state(["mlb"], "2026-08-19", "test_key")
     validator = Stage2BProductValidator(pit_state)
 
     fused_forecast = {
